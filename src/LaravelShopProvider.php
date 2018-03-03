@@ -29,8 +29,9 @@ class LaravelShopProvider extends ServiceProvider
      *
      * @return void
      */
-    public function boot(Router $router)
+    public function boot()
     {
+        $router = Router::class;
         parent::boot($router);
 
         // Publish config files

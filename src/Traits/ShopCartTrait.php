@@ -77,6 +77,13 @@ trait ShopCartTrait
         if (!is_array($item) && !$item->isShoppable) return;
         // Get item
         $cartItem = $this->getItem(is_array($item) ? $item['sku'] : $item->sku);
+
+        if ( ! $this->attributes ) {
+            return;
+        }
+
+        $this->user = \App\User::find($this->attributes['user_id']);
+
         // Add new or sum quantity
         if (empty($cartItem)) {
             $reflection = null;
