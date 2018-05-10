@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use Illuminate\Http\Request;
 
 trait ShopCartTrait
 {
@@ -44,6 +45,26 @@ trait ShopCartTrait
 
             return true;
         });
+
+        if( Auth::id() && session()->get(config('shop.session_key')) ) {
+            $session_id = session()->get(config('shop.session_key'));
+
+            $cart = static::where('session_id', $session_id)->first();
+
+            if( $cart ) {
+
+                $cart->user_id = Auth::id();
+                $cart->save();
+
+                if( $cart->items ) {
+                    foreach( $cart->items as $item ) {
+                        $item->user_id = Auth::id();
+                        $item->save();
+                    }
+                }
+            }
+            session()->forget(config('shop.session_key'));
+        }
     }
 
     /**
@@ -82,7 +103,12 @@ trait ShopCartTrait
             return;
         }
 
-        $this->user = \App\User::find($this->attributes['user_id']);
+        if( ! Auth::guest() ) {
+            $this->user = \App\User::find($this->attributes['user_id']);
+        } else {
+            $this->user = null;
+        }
+
 
         // Add new or sum quantity
         if (empty($cartItem)) {
@@ -91,7 +117,7 @@ trait ShopCartTrait
                 $reflection = new \ReflectionClass($item);
             }
             $cartItem = call_user_func( Config::get('shop.item') . '::create', [
-                'user_id'       => $this->user->shopId,
+                'user_id'       => ( $this->user ) ? $this->user->shopId : 0,
                 'cart_id'       => $this->attributes['id'],
                 'sku'           => is_array($item) ? $item['sku'] : $item->sku,
                 'price'         => is_array($item) ? $item['price'] : $item->price,
@@ -200,6 +226,11 @@ trait ShopCartTrait
      */
     public function scopeWhereUser($query, $userId)
     {
+        if( Auth::guest()) {
+            $session_id = $this->getSessionKey();
+            return $query->where('session_id', $session_id );
+        }
+
         return $query->where('user_id', $userId);
     }
 
@@ -212,8 +243,26 @@ trait ShopCartTrait
      */
     public function scopeWhereCurrent($query)
     {
-        if (Auth::guest()) return $query;
+        if (Auth::guest()) {
+            $session_id = $this->getSessionKey();
+            //dd($session_id);
+            return $query->where('session_id', $session_id );
+            return $query;
+        }
         return $query->whereUser(Auth::user()->shopId);
+    }
+
+    function getSessionKey() {
+
+
+        $session_id = session()->get(config('shop.session_key'));
+
+        if( ! $session_id ) {
+            session([config('shop.session_key') => uniqid(date('Ymdhis')) ]);
+            $session_id = session()->get(config('shop.session_key') );
+        }
+
+        return $session_id;
     }
 
     /**
@@ -225,12 +274,25 @@ trait ShopCartTrait
      */
     public function scopeCurrent($query)
     {
-        if (Auth::guest()) return;
+        //if (Auth::guest()) return;
         $cart = $query->whereCurrent()->first();
+
         if (empty($cart)) {
-            $cart = call_user_func( Config::get('shop.cart') . '::create', [
-                'user_id' =>  Auth::user()->shopId
-            ]);
+            $session_id = $this->getSessionKey();
+            
+            if(Auth::guest()) {
+                //dd($session_id);
+
+                $cart = call_user_func( Config::get('shop.cart') . '::create', [
+                    'user_id' =>  0,
+                    'session_id' => $session_id
+                ]);
+            } else {
+                $cart = call_user_func( Config::get('shop.cart') . '::create', [
+                    'user_id' =>  Auth::user()->shopId,
+                    'session_id' => $session_id
+                ]);
+            }
         }
         return $cart;
     }
